@@ -4,37 +4,38 @@ import { generateClient } from "aws-amplify/data";
 
 const client = generateClient<Schema>();
 
+type TodoStatus = "PENDIENTE" | "EN_PROCESO" | "FINALIZADA";
+
 type Todo = {
   id: string;
   content: string;
   dueDate: string | null;
-  status: "PENDIENTE" | "EN_PROCESO" | "FINALIZADA";
+  status: TodoStatus;
   createdAt: string;
   updatedAt: string;
 };
 
-type EditingTodo = {
-  id: string;
-  content: string;
-  dueDate: string | null;
-  status: "PENDIENTE" | "EN_PROCESO" | "FINALIZADA";
-};
-
 function App() {
-  const [todos, setTodos] = useState<Array<Todo>>([]);
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [newTodoContent, setNewTodoContent] = useState("");
   const [newTodoDate, setNewTodoDate] = useState("");
-  const [editingTodo, setEditingTodo] = useState<EditingTodo | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>>({
+    content: "",
+    dueDate: null,
+    status: "PENDIENTE"
+  });
 
+  // Carga inicial y suscripción a cambios en tiempo real
   useEffect(() => {
-    const subscription = client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos(data.items as Todo[]),
+    const sub = client.models.Todo.observeQuery().subscribe({
+      next: ({ items }) => setTodos(items as Todo[])
     });
-
-    return () => subscription.unsubscribe();
+    return () => sub.unsubscribe();
   }, []);
 
-  async function createTodo() {
+  // Función optimizada para crear tarea
+  const createTodo = async () => {
     if (!newTodoContent.trim()) return;
     
     await client.models.Todo.create({
@@ -45,178 +46,110 @@ function App() {
     
     setNewTodoContent("");
     setNewTodoDate("");
-  }
+  };
 
-  async function deleteTodo(id: string) {
-    await client.models.Todo.delete({ id });
-  }
+  // Función optimizada para actualizar tarea
+  const updateTodo = async (id: string) => {
+    await client.models.Todo.update({
+      id,
+      ...editForm
+    });
+    cancelEditing();
+  };
 
-  function startEditing(todo: Todo) {
-    setEditingTodo({
-      id: todo.id,
+  // Función para iniciar edición
+  const startEditing = (todo: Todo) => {
+    setEditingId(todo.id);
+    setEditForm({
       content: todo.content,
       dueDate: todo.dueDate,
       status: todo.status
     });
-  }
+  };
 
-  async function updateTodo() {
-    if (!editingTodo) return;
-    
-    await client.models.Todo.update({
-      id: editingTodo.id,
-      content: editingTodo.content,
-      dueDate: editingTodo.dueDate,
-      status: editingTodo.status
+  // Función para cancelar edición
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditForm({
+      content: "",
+      dueDate: null,
+      status: "PENDIENTE"
     });
-    
-    setEditingTodo(null);
-  }
+  };
 
-  async function updateTodoStatus(todo: Todo, newStatus: "PENDIENTE" | "EN_PROCESO" | "FINALIZADA") {
-    await client.models.Todo.update({
-      id: todo.id,
-      status: newStatus
-    });
-  }
+  // Función para actualizar estado
+  const updateStatus = async (id: string, status: TodoStatus) => {
+    await client.models.Todo.update({ id, status });
+  };
 
-  function formatDateTime(datetime: string | null) {
-    if (!datetime) return "Sin fecha";
-    return new Date(datetime).toLocaleString();
-  }
+  // Formateador de fecha
+  const formatDate = (dateString: string | null) => {
+    return dateString ? new Date(dateString).toLocaleString() : "Sin fecha";
+  };
 
   return (
-    <main style={{ maxWidth: "800px", margin: "0 auto", padding: "20px" }}>
-      <h1>Mis Tareas</h1>
+    <div className="container">
+      <h1>Gestor de Tareas</h1>
       
-      <div style={{ marginBottom: "20px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+      <div className="add-todo-form">
         <input
           type="text"
           value={newTodoContent}
           onChange={(e) => setNewTodoContent(e.target.value)}
           placeholder="Nueva tarea"
-          style={{ padding: "8px", flex: "1" }}
         />
         <input
           type="datetime-local"
           value={newTodoDate}
           onChange={(e) => setNewTodoDate(e.target.value)}
-          style={{ padding: "8px" }}
         />
-        <button 
-          onClick={createTodo} 
-          style={{ padding: "8px 16px", backgroundColor: "#4CAF50", color: "white", border: "none" }}
-        >
-          + Añadir
-        </button>
+        <button onClick={createTodo}>Añadir Tarea</button>
       </div>
-      
-      <ul style={{ listStyle: "none", padding: 0 }}>
+
+      <ul className="todo-list">
         {todos.map((todo) => (
-          <li 
-            key={todo.id}
-            style={{ 
-              marginBottom: "10px", 
-              padding: "15px", 
-              border: "1px solid #ddd", 
-              borderRadius: "5px",
-              backgroundColor: 
-                todo.status === "FINALIZADA" ? "#e6ffe6" : 
-                todo.status === "EN_PROCESO" ? "#fffae6" : "#fff"
-            }}
-          >
-            {editingTodo?.id === todo.id ? (
-              <div>
+          <li key={todo.id} className={`todo-item ${todo.status.toLowerCase()}`}>
+            {editingId === todo.id ? (
+              <div className="edit-form">
                 <input
                   type="text"
-                  value={editingTodo.content}
-                  onChange={(e) => setEditingTodo({...editingTodo, content: e.target.value})}
-                  style={{ width: "100%", marginBottom: "10px", padding: "8px" }}
+                  value={editForm.content}
+                  onChange={(e) => setEditForm({...editForm, content: e.target.value})}
                 />
                 <input
                   type="datetime-local"
-                  value={editingTodo.dueDate ? editingTodo.dueDate.split('.')[0] : ""}
-                  onChange={(e) => setEditingTodo({...editingTodo, dueDate: e.target.value})}
-                  style={{ width: "100%", marginBottom: "10px", padding: "8px" }}
+                  value={editForm.dueDate ? editForm.dueDate.split('.')[0] : ''}
+                  onChange={(e) => setEditForm({...editForm, dueDate: e.target.value})}
                 />
                 <select
-                  value={editingTodo.status}
-                  onChange={(e) => setEditingTodo({
-                    ...editingTodo, 
-                    status: e.target.value as "PENDIENTE" | "EN_PROCESO" | "FINALIZADA"
-                  })}
-                  style={{ width: "100%", marginBottom: "10px", padding: "8px" }}
+                  value={editForm.status}
+                  onChange={(e) => setEditForm({...editForm, status: e.target.value as TodoStatus})}
                 >
                   <option value="PENDIENTE">Pendiente</option>
                   <option value="EN_PROCESO">En Proceso</option>
                   <option value="FINALIZADA">Finalizada</option>
                 </select>
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <button 
-                    onClick={updateTodo}
-                    style={{ 
-                      padding: "8px 16px", 
-                      backgroundColor: "#4CAF50", 
-                      color: "white", 
-                      border: "none",
-                      flex: 1
-                    }}
-                  >
-                    Guardar
-                  </button>
-                  <button 
-                    onClick={() => setEditingTodo(null)}
-                    style={{ 
-                      padding: "8px 16px", 
-                      backgroundColor: "#f44336", 
-                      color: "white", 
-                      border: "none",
-                      flex: 1
-                    }}
-                  >
-                    Cancelar
-                  </button>
+                <div className="edit-actions">
+                  <button onClick={() => updateTodo(todo.id)}>Guardar</button>
+                  <button onClick={cancelEditing}>Cancelar</button>
                 </div>
               </div>
             ) : (
-              <div>
-                <h3 style={{ marginTop: 0 }}>{todo.content}</h3>
-                <p><strong>Fecha límite:</strong> {formatDateTime(todo.dueDate)}</p>
+              <div className="todo-content">
+                <h3>{todo.content}</h3>
+                <p><strong>Fecha:</strong> {formatDate(todo.dueDate)}</p>
                 <p><strong>Estado:</strong> {todo.status}</p>
-                
-                <div style={{ display: "flex", gap: "10px", marginTop: "15px" }}>
+                <div className="todo-actions">
                   <select
                     value={todo.status}
-                    onChange={(e) => updateTodoStatus(todo, e.target.value as "PENDIENTE" | "EN_PROCESO" | "FINALIZADA")}
-                    style={{ padding: "8px", flex: 1 }}
+                    onChange={(e) => updateStatus(todo.id, e.target.value as TodoStatus)}
                   >
                     <option value="PENDIENTE">Pendiente</option>
                     <option value="EN_PROCESO">En Proceso</option>
                     <option value="FINALIZADA">Finalizada</option>
                   </select>
-                  
-                  <button 
-                    onClick={() => startEditing(todo)}
-                    style={{ 
-                      padding: "8px 16px", 
-                      backgroundColor: "#2196F3", 
-                      color: "white", 
-                      border: "none",
-                      flex: 1
-                    }}
-                  >
-                    Editar
-                  </button>
-                  <button 
-                    onClick={() => deleteTodo(todo.id)}
-                    style={{ 
-                      padding: "8px 16px", 
-                      backgroundColor: "#f44336", 
-                      color: "white", 
-                      border: "none",
-                      flex: 1
-                    }}
-                  >
+                  <button onClick={() => startEditing(todo)}>Editar</button>
+                  <button onClick={() => client.models.Todo.delete({ id: todo.id })}>
                     Eliminar
                   </button>
                 </div>
@@ -225,7 +158,9 @@ function App() {
           </li>
         ))}
       </ul>
-    </main>
+
+      
+    </div>
   );
 }
 
