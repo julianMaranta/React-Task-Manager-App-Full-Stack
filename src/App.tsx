@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
+import "./App.css";
 
 const client = generateClient<Schema>();
 
@@ -27,18 +28,25 @@ function App() {
     dueDate: null,
     status: "PENDIENTE"
   });
+  const [isLoading, setIsLoading] = useState(true);
+  const [filter, setFilter] = useState<TodoStatus | "TODAS">("TODAS");
 
   // Carga inicial y suscripción a cambios
   useEffect(() => {
-    // Primero hacemos una consulta inicial
     const fetchTodos = async () => {
-      const { data: initialTodos } = await client.models.Todo.list();
-      setTodos(initialTodos as Todo[]);
+      setIsLoading(true);
+      try {
+        const { data: initialTodos } = await client.models.Todo.list();
+        setTodos(initialTodos as Todo[]);
+      } catch (error) {
+        console.error("Error fetching todos:", error);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     fetchTodos();
 
-    // Luego nos suscribimos a los cambios
     const subscription = client.models.Todo.observeQuery().subscribe({
       next: ({ items }) => {
         setTodos(items as Todo[]);
@@ -153,215 +161,175 @@ function App() {
 
   // Formateador de fecha
   const formatDate = (dateString: string | null) => {
-    return dateString ? new Date(dateString).toLocaleString() : "Sin fecha";
+    if (!dateString) return "Sin fecha";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
   };
 
+  // Filtrar tareas según el estado seleccionado
+  const filteredTodos = filter === "TODAS" 
+    ? todos 
+    : todos.filter(todo => todo.status === filter);
+
   return (
-    <div style={styles.container}>
-      <h1 style={styles.title}>Gestor de Tareas</h1>
+    <div className="app-container">
+      <header className="app-header">
+        <h1 className="app-title">Gestor de Tareas</h1>
+        <p className="app-subtitle">Organiza tu día de manera eficiente</p>
+      </header>
       
-      <div style={styles.formContainer}>
+      <div className="todo-form">
         <input
           type="text"
           value={newTodo.content}
           onChange={(e) => setNewTodo({...newTodo, content: e.target.value})}
-          placeholder="Nueva tarea"
-          style={styles.input}
+          placeholder="¿Qué necesitas hacer?"
+          className="todo-input"
+          onKeyPress={(e) => e.key === "Enter" && handleCreate()}
         />
         <input
           type="datetime-local"
           value={newTodo.dueDate}
           onChange={(e) => setNewTodo({...newTodo, dueDate: e.target.value})}
-          style={styles.input}
+          className="todo-date-input"
         />
-        <button onClick={handleCreate} style={styles.addButton}>
-          Añadir Tarea
+        <button onClick={handleCreate} className="add-button">
+          <span className="button-icon">+</span> Añadir Tarea
         </button>
       </div>
 
-      <ul style={styles.list}>
-        {todos.map((todo) => (
-          <li 
-            key={todo.id} 
-            style={{
-              ...styles.item,
-              backgroundColor: 
-                todo.status === "FINALIZADA" ? "#e6ffe6" :
-                todo.status === "EN_PROCESO" ? "#fffae6" : "#fff"
-            }}
-          >
-            {editingId === todo.id ? (
-              <div style={styles.editForm}>
-                <input
-                  type="text"
-                  value={editData.content}
-                  onChange={(e) => setEditData({...editData, content: e.target.value})}
-                  style={styles.input}
-                />
-                <input
-                  type="datetime-local"
-                  value={editData.dueDate ? editData.dueDate.split('.')[0] : ''}
-                  onChange={(e) => setEditData({...editData, dueDate: e.target.value})}
-                  style={styles.input}
-                />
-                <select
-                  value={editData.status}
-                  onChange={(e) => setEditData({...editData, status: e.target.value as TodoStatus})}
-                  style={styles.input}
-                >
-                  <option value="PENDIENTE">Pendiente</option>
-                  <option value="EN_PROCESO">En Proceso</option>
-                  <option value="FINALIZADA">Finalizada</option>
-                </select>
-                <div style={styles.buttonGroup}>
-                  <button onClick={handleUpdate} style={styles.saveButton}>
-                    Guardar
-                  </button>
-                  <button onClick={() => setEditingId(null)} style={styles.cancelButton}>
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <h3 style={styles.todoTitle}>{todo.content}</h3>
-                <p><strong>Fecha:</strong> {formatDate(todo.dueDate)}</p>
-                <p><strong>Estado:</strong> {todo.status}</p>
-                <div style={styles.buttonGroup}>
+      <div className="filter-buttons">
+        <button 
+          onClick={() => setFilter("TODAS")} 
+          className={`filter-button ${filter === "TODAS" ? "active" : ""}`}
+        >
+          Todas
+        </button>
+        <button 
+          onClick={() => setFilter("PENDIENTE")} 
+          className={`filter-button ${filter === "PENDIENTE" ? "active" : ""}`}
+        >
+          Pendientes
+        </button>
+        <button 
+          onClick={() => setFilter("EN_PROCESO")} 
+          className={`filter-button ${filter === "EN_PROCESO" ? "active" : ""}`}
+        >
+          En Proceso
+        </button>
+        <button 
+          onClick={() => setFilter("FINALIZADA")} 
+          className={`filter-button ${filter === "FINALIZADA" ? "active" : ""}`}
+        >
+          Finalizadas
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="loading-spinner">
+          <div className="spinner"></div>
+          <p>Cargando tareas...</p>
+        </div>
+      ) : filteredTodos.length === 0 ? (
+        <div className="empty-state">
+          <img src="https://cdn-icons-png.flaticon.com/512/4076/4076478.png" alt="No tasks" className="empty-image" />
+          <p>No hay tareas {filter !== "TODAS" ? `en estado ${filter.toLowerCase()}` : ""}</p>
+          <button onClick={() => setFilter("TODAS")} className="primary-button">
+            Ver todas las tareas
+          </button>
+        </div>
+      ) : (
+        <ul className="todo-list">
+          {filteredTodos.map((todo) => (
+            <li 
+              key={todo.id} 
+              className={`todo-item ${todo.status.toLowerCase()} ${editingId === todo.id ? "editing" : ""}`}
+            >
+              {editingId === todo.id ? (
+                <div className="edit-form">
+                  <input
+                    type="text"
+                    value={editData.content}
+                    onChange={(e) => setEditData({...editData, content: e.target.value})}
+                    className="todo-input"
+                    autoFocus
+                  />
+                  <input
+                    type="datetime-local"
+                    value={editData.dueDate ? editData.dueDate.split('.')[0] : ''}
+                    onChange={(e) => setEditData({...editData, dueDate: e.target.value})}
+                    className="todo-date-input"
+                  />
                   <select
-                    value={todo.status}
-                    onChange={(e) => handleStatusChange(todo.id, e.target.value as TodoStatus)}
-                    style={styles.select}
+                    value={editData.status}
+                    onChange={(e) => setEditData({...editData, status: e.target.value as TodoStatus})}
+                    className="status-select"
                   >
                     <option value="PENDIENTE">Pendiente</option>
                     <option value="EN_PROCESO">En Proceso</option>
                     <option value="FINALIZADA">Finalizada</option>
                   </select>
-                  <button 
-                    onClick={() => startEditing(todo)} 
-                    style={styles.editButton}
-                  >
-                    Editar
-                  </button>
-                  <button 
-                    onClick={() => handleDelete(todo.id)} 
-                    style={styles.deleteButton}
-                  >
-                    Eliminar
-                  </button>
+                  <div className="button-group">
+                    <button onClick={handleUpdate} className="save-button">
+                      Guardar
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="cancel-button">
+                      Cancelar
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
+              ) : (
+                <div className="todo-content">
+                  <div className="todo-header">
+                    <h3 className="todo-title">{todo.content}</h3>
+                    <span className={`status-badge ${todo.status.toLowerCase()}`}>
+                      {todo.status.replace("_", " ").toLowerCase()}
+                    </span>
+                  </div>
+                  
+                  <div className="todo-details">
+                    <p className="due-date">
+                      <span className="detail-icon">📅</span>
+                      {formatDate(todo.dueDate)}
+                    </p>
+                    <div className="todo-actions">
+                      <select
+                        value={todo.status}
+                        onChange={(e) => handleStatusChange(todo.id, e.target.value as TodoStatus)}
+                        className="status-select"
+                      >
+                        <option value="PENDIENTE">Pendiente</option>
+                        <option value="EN_PROCESO">En Proceso</option>
+                        <option value="FINALIZADA">Finalizada</option>
+                      </select>
+                      <button 
+                        onClick={() => startEditing(todo)} 
+                        className="edit-button"
+                      >
+                        ✏️ Editar
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(todo.id)} 
+                        className="delete-button"
+                      >
+                        🗑️ Eliminar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
-
-// Estilos separados para mejor organización
-const styles = {
-  container: {
-    maxWidth: "800px",
-    margin: "0 auto",
-    padding: "20px",
-    fontFamily: "Arial, sans-serif"
-  },
-  title: {
-    color: "#333",
-    textAlign: "center" as const
-  },
-  formContainer: {
-    display: "flex",
-    gap: "10px",
-    marginBottom: "20px",
-    flexWrap: "wrap" as const
-  },
-  input: {
-    padding: "8px",
-    borderRadius: "4px",
-    border: "1px solid #ddd",
-    flex: "1",
-    minWidth: "200px"
-  },
-  addButton: {
-    padding: "8px 16px",
-    backgroundColor: "#4CAF50",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer"
-  },
-  list: {
-    listStyle: "none",
-    padding: "0",
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "10px"
-  },
-  item: {
-    padding: "15px",
-    borderRadius: "5px",
-    border: "1px solid #ddd",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
-  },
-  todoTitle: {
-    marginTop: "0",
-    color: "#333"
-  },
-  editForm: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "10px"
-  },
-  buttonGroup: {
-    display: "flex",
-    gap: "10px",
-    marginTop: "10px",
-    flexWrap: "wrap" as const
-  },
-  select: {
-    padding: "8px",
-    borderRadius: "4px",
-    border: "1px solid #ddd",
-    flex: "1"
-  },
-  editButton: {
-    padding: "8px 16px",
-    backgroundColor: "#2196F3",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    flex: "1"
-  },
-  deleteButton: {
-    padding: "8px 16px",
-    backgroundColor: "#f44336",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    flex: "1"
-  },
-  saveButton: {
-    padding: "8px 16px",
-    backgroundColor: "#4CAF50",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    flex: "1"
-  },
-  cancelButton: {
-    padding: "8px 16px",
-    backgroundColor: "#ff9800",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    flex: "1"
-  }
-};
 
 export default App;
